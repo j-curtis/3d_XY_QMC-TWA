@@ -47,6 +47,10 @@ class QMC:
 		### we use an initial condition which is uniform
 		self.thetas = np.zeros(self.shape)
 		#self.thetas = self.rng.random(size =self.shape)*2.*np.pi
+		
+		
+		### This flag will be turned on if we want to use an over relaxation procedure 
+		self.over_relaxation = False
 
 	### Modifies the thetas in place one site at a time
 	### Works by randomly selecting a site and performign a metropolis-hastings update
@@ -104,6 +108,10 @@ class QMC:
 
 		for i in range(sites.shape[0]):
 			self.MCStep_site(sites[i,:])
+			
+		if self.over_relaxation:
+			self.over_relaxation_sweep()
+
 
 	### Local energy function is useful for calling in MC step updates 
 	### theta_val is the value of the angle at size x,y,t
@@ -116,81 +124,57 @@ class QMC:
 
 		return xterms+yterms+tterms
 
-	### Modifies the thetas in place 
-	### Does an even/odd sublattice update in parallel
-	def MCStep_checkerboard(self):
-		### This implements one time step of the Metropolis update
+	### This method computes the local self-consistent field on a given site 
+	def get_local_field(self,site):
+		x,y,t = site[:]
+
+		xterms = -self.Kx*( np.exp(1.j*self.thetas[x-1,y,t]) + np.exp(1.j*self.thetas[(x+1)%self.L,y,t]) )
+		yterms = -self.Ky*( np.exp(1.j*self.thetas[x,y-1,t]) + np.exp(1.j*self.thetas[x,(y+1)%self.L,t]) )
+		tterms = -self.Kt*( np.exp(1.j*self.thetas[x,y,t-1]) + np.exp(1.j*self.thetas[x,y,(t+1)%self.M]) )
+
+		return xterms+yterms+tterms
+	
+	### This implements an over-relaxation sweep 
+	def over_relaxation_sweep(self):
+	
+		xsites = np.arange(self.L)[:,None,None]
+		ysites = np.arange(self.L)[None,:,None]
+		tsites = np.arange(self.M)[None,None,:]
+
+		xsites_grid,ysites_grid,tsites_grid = np.meshgrid(xsites,ysites,tsites,indexing='ij')
+
+		sites = np.stack([xsites_grid.ravel(),ysites_grid.ravel(),tsites_grid.ravel()],axis=-1)
+
+		for i in range(sites.shape[0]):
+			site = sites[i,:]
+			local_field = self.get_local_field(site)
+			
+			if np.abs(local_field) != 0.:
+				local_field = local_field/np.abs(local_field) ### normalize to unit phasor
+				
+				### convert to cartesian vector 
+				nx = np.real(local_field)
+				ny = np.imag(local_field) 
+				
+				### get the current local theta 
+				theta = self.thetas[x,y,t]
+				
+				### Now we reflect this 
+				sx = np.cos(theta)
+				sy = np.sin(theta)
+				
+				proj = nx*sx + ny*sy 
+				sx_new = 2.*proj*nx - sx 
+				sy_new = 2.*proj*ny - sy 
+				
+				self.thetas[x,y,t] =  np.arctan2(sy_new, sx_new) % (2 * np.pi)
+				
+				
+
 		
-
-		### TAKEN FROM CHAT GPT
-		########################
-		
-		### we define a function for updating an entire sublattice 
-		def sl_update(mask): 
-
-			xs, ys, ts = np.where(mask)
-
-			for idx in np.random.permutation(len(xs)):
-				x, y, t = xs[idx], ys[idx], ts[idx]
-				old_theta = self.thetas[x, y, t]
-				old_E = self.local_energy(old_theta, x, y, t)
-
-				delta_theta = np.pi/3.
-				new_theta = (old_theta + np.random.uniform(-delta_theta, delta_theta)) % (2.*np.pi)
-
-				new_E = self.local_energy(new_theta, x, y, t)
-				dE = new_E - old_E
-
-				if self.rng.random() < np.exp(-dE):
-					self.thetas[x,y,t] = new_theta
-
-		########################
-		sl_update(self.even_mask)
-		sl_update(self.odd_mask)
-
-
-
-		# ### We implement by first breaking in to even and odd sublattices
-		# ### Each of these can be updated independently of the other 
-		# ### We index the sublattice by s = 0,1 for odd or even
-		# for s in range(2):
-		# 	### We compute the self-consistent fields for all sites 
-		# 	### Being careful about roll
-		# 	nn_indices = [(1,0,0),(-1,0,0),(0,1,0),(0,-1,0),(0,0,1),(0,0,-1) ]
-		# 	nn_Ks = [ self.Kx,self.Kx,self.Ky,self.Ky,self.Kt,self.Kt ]
-		# 	### For each nearest neighbor this is the corresponding spin stiffness in that direction 
-
-		# 	#self_consistent_field = sum([ nn_Ks[nn]*np.exp(-1.j*np.roll(thetas,nn_indices[nn])) for nn in range(len(nn_indices)) ])
-		# 	self_consistent_field = sum([ nn_Ks[nn]*np.exp(-1.j*np.roll(thetas, shift=nn_indices[nn], axis=(0,1,2) ) ) for nn in range(len(nn_indices)) ]) 
-
-		# 	new_thetas = self.rng.random(self.shape)*2.*np.pi 
-		# 	### These will be the proposal angles for both odd and even, we only need to update SCF after first sweep
-		# 	delta_Es = -np.real( ( np.exp(1.j*new_thetas) - np.exp(1.j*thetas) )*self_consistent_field )
-
-		# 	### Now we form an array of accept probabilities
-		# 	thresholds = np.exp(-delta_Es)
-
-		# 	### We generate an array of random floats in [0,1] to compare 
-		# 	probs = self.rng.random(size=self.shape)
-
-		# 	### This will be one if the entry for that site is accepted and 0 else
-		# 	accepts = (probs < thresholds).astype(float)
-
-		# 	### We now elementwise replace the old angles with those that should be updated 
-		# 	### We use x ->  x'' = (1-p)*x + p*x' where p is 0,1 depending on whether we accept x' over x (p = 1 is accept x')
-		# 	### We mask only the even sublattice and update it 
-		# 	### We generate an array mask 
-		# 	### sublattice A is if x + y + t is even 
-		# 	### This should generate array mask for sublattice A 
-		# 	### This piece courtesy of chatGPT
-		# 	x = np.arange(self.L)[:,None,None]
-		# 	y = np.arange(self.L)[None,:,None]
-		# 	t = np.arange(self.M)[None,None,:]
-		# 	mask_SL_A = (x+y+t)%2 == 0 
-
-		# 	mask = mask_SL_A if s == 0 else ~mask_SL_A ### for sublattice B we flip the mask
-		# 	thetas[mask] += accepts[mask] * (new_thetas[mask] - thetas[mask])	
-
+	
+	
+	
 	##########################
 	### SAMPLE OBSERVABLES ###
 	##########################
@@ -244,6 +228,12 @@ class QMC:
 	### MC SAMPLING METHODS ###
 	###########################
 
+
+	### This method will turn on the over-relaxation procedure 
+	def use_over_relaxation(self):
+		self.over_relaxation = True
+
+
 	### Sets the parameters for sampling 
 	def set_sampling(self,nburn,nsample,nstep):
 	
@@ -285,19 +275,19 @@ class QMC:
 
 def main():
 
-	dataDir = "../data/07102025_1/"
+	dataDir = "../data/07112025_1/"
 
 
 	EJ = 1.
 	EC = 0.05
-	nTs = 15
+	nTs = 10
 	Ts = np.linspace(0.5,3.,nTs)
-	L = 40
+	L = 30
 	M = 1
 
-	nburn = 10000
+	nburn = 100000
 	nsample = 100
-	nstep = 500
+	nstep = 1000
 
 	actions = np.zeros((nTs,nsample))
 	OPs = np.zeros((nTs,nsample),dtype=complex)
