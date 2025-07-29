@@ -5,6 +5,7 @@
 import numpy as np
 from matplotlib import pyplot as plt 
 import time 
+import pickle 
 
 
 ### We will create a class to handle the simulations 
@@ -147,6 +148,7 @@ class QMC:
 
 		for i in range(sites.shape[0]):
 			site = sites[i,:]
+			x,y,t = site[:]
 			local_field = self.get_local_field(site)
 			
 			if np.abs(local_field) != 0.:
@@ -167,7 +169,7 @@ class QMC:
 				sx_new = 2.*proj*nx - sx 
 				sy_new = 2.*proj*ny - sy 
 				
-				self.thetas[x,y,t] =  np.arctan2(sy_new, sx_new) % (2 * np.pi)
+				self.thetas[x,y,t] =  np.arctan2(sy_new, sx_new) 
 				
 				
 
@@ -229,11 +231,6 @@ class QMC:
 	###########################
 
 
-	### This method will turn on the over-relaxation procedure 
-	def use_over_relaxation(self):
-		self.over_relaxation = True
-
-
 	### Sets the parameters for sampling 
 	def set_sampling(self,nburn,nsample,nstep):
 	
@@ -271,11 +268,38 @@ class QMC:
 
 
 
+### Compatibility with demler_tools
+def run_sims(save_filename,Ej,Ec,T,L,M,nburn,nsample,nstep,over_relax=False):
+	sim = QMC(Ej,Ec,T,L,M)
+	sim.over_relax = over_relax
+	sim.set_sampling(nburn,nsample,nstep)
+
+	sim.burn()
+	sim.sample()
+
+	with open(save_filename, 'wb') as out_file:
+        	pickle.dump((sim.action_samples,sim.OP_samples,sim.vort_samples,sim.theta_samples), out_file)
+        	
+        ### now some smaller suffixed files
+        ### action samples 
+	with open(save_filename+"_action_samples",'wb') as out_file:
+		pickle.dump(sim.action_samples, out_file)
+        
+        ### OP samples 
+	with open(save_filename+"_OP_samples",'wb') as out_file:
+		pickle.dump(sim.OP_samples,out_file)
+	
+
+
+
+
+
+
 
 
 def main():
 
-	dataDir = "../data/07112025_1/"
+	dataDir = "../data/07112025_2/"
 
 
 	EJ = 1.
@@ -285,9 +309,11 @@ def main():
 	L = 30
 	M = 1
 
-	nburn = 100000
+	nburn = 10000
 	nsample = 100
-	nstep = 1000
+	nstep = 500
+	
+	over_relax = True 
 
 	actions = np.zeros((nTs,nsample))
 	OPs = np.zeros((nTs,nsample),dtype=complex)
@@ -301,6 +327,7 @@ def main():
 		tloop1 = time.time()
 		sim = QMC(EJ,EC,Ts[i],L,M)
 		sim.set_sampling(nburn,nsample,nstep)
+		sim.over_relaxation = over_relax
 
 		sim.burn()
 		sim.sample()
@@ -331,6 +358,7 @@ def main():
 			file.write("nburn: {nb}\n".format(nb=nburn))
 			file.write("nsample: {ns}\n".format(ns=nsample))
 			file.write("nstep: {ns}\n".format(ns=nstep))
+			file.write("over relax: {ov}".format(ov = over_relax))
 			file.write("total time: {t}s\n".format(t = t1-t0))
 
 
