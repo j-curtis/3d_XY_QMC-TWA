@@ -8,7 +8,7 @@ import time
 import pickle 
 
 
-### We will create a class to handle the simulations 
+### We will create a class to handle the QMC sampling 
 class QMC:
 	### Initialize method
 	def __init__(self,EJ,EC,T,L,M):
@@ -47,7 +47,6 @@ class QMC:
 
 		### we use an initial condition which is uniform
 		self.thetas = np.zeros(self.shape)
-		#self.thetas = self.rng.random(size =self.shape)*2.*np.pi
 		
 		
 		### This flag will be turned on if we want to use an over relaxation procedure 
@@ -265,6 +264,56 @@ class QMC:
 
 			### Update the counter 
 			counter += 1
+
+
+### This class operates on the output of the QMC sampler and implements the real time dynamics 
+class TWDynamics:
+	"""Accepts a QMC sample class and implements the real time dynamics according to truncated Wigner approximation"""
+	def __init__(self,qmc,t0,tf,ntimes):
+		self.qmc = qmc ### Instance of QMC class we will operate on 
+		
+
+		### Simulation time parameters 
+		self.t0 = t0 
+		self.tf = tf 
+		self.ntimes = ntimes 
+		self.times = np.linspace(self.t0,self.tf,self.ntimes) 
+		
+		### The real time trajectories are only LxL
+		self.shape = (self.qmc.L,self.qmc.L,self.qmc.nsample)
+		self.sim_shape = (self.ntimes,*self.shape) ### Simulation shapes have an extra axis 
+		
+		
+	### Allows to modify simulation parameters 
+	def set_simulation_times(self,t0,tf,ntimes):
+		self.t0 = t0
+		self.tf = tf 
+		self.ntimes = ntimes 
+		self.times = np.linspace(self.t0,self.tf,self.ntimes)
+		
+		
+	### This method will be the RHS of the EOM 
+	def _eom_rhs(self,t,X):
+		### First we reshape the dof 
+		### We encode the coordinates in the first half of the array and the velocities in the second half 
+		dof = X.reshape((2,*self.shape) )
+		thetas = dof[0,...]
+		theta_dots = dof[1,...]
+		
+		dXdt = np.zeros_like(dof)
+		
+		
+		dXdt[0,...] = theta_dots ### Update thetas according to the velocities
+		
+		nns = [ [1,0,0],[-1,0,0],[0,1,0],[0,-1,0] ] ### Amount to roll by on each axis to form the spatial couplings  
+		dXdt[1,...] = - self.qmc.Ec*self.qmc.EJ*sum([ np.sin(thetas - np.roll(thetas,nn,[0,1,2]))  for nn in nns ]) 
+		
+		### Finally we reflatten and send out 
+		return dXdt.ravel()
+	
+		
+
+
 
 
 
