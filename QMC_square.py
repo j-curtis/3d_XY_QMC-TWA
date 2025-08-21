@@ -3,6 +3,7 @@
 ### 11/22/24
 
 import numpy as np
+from scipy import integrate as intg
 from matplotlib import pyplot as plt 
 import time 
 import pickle 
@@ -269,10 +270,13 @@ class QMC:
 ### This class operates on the output of the QMC sampler and implements the real time dynamics 
 class TWDynamics:
 	"""Accepts a QMC sample class and implements the real time dynamics according to truncated Wigner approximation"""
-	def __init__(self,qmc,t0,tf,ntimes):
-		self.qmc = qmc ### Instance of QMC class we will operate on 
+	def __init__(self,samples,t0,tf,ntimes):
+		self.samples = samples ### Samples is an array of the shape (L,L,nsample) and is a set of samples of instantenous LxL snapshots of thetas 
+		self.shape = self.samples.shape
 		
-
+		self.nsamples = self.shape[-1]
+		self.L = self.shape[0]
+		
 		### Simulation time parameters 
 		self.t0 = t0 
 		self.tf = tf 
@@ -280,18 +284,12 @@ class TWDynamics:
 		self.times = np.linspace(self.t0,self.tf,self.ntimes) 
 		
 		### The real time trajectories are only LxL
-		self.shape = (self.qmc.L,self.qmc.L,self.qmc.nsample)
-		self.sim_shape = (self.ntimes,*self.shape) ### Simulation shapes have an extra axis 
+		self.sim_shape = (self.ntimes,*self.shape) ### Simulation shapes have an extra axis which is first by output from the ODE_solve method 
 		
-		
-	### Allows to modify simulation parameters 
-	def set_simulation_times(self,t0,tf,ntimes):
-		self.t0 = t0
-		self.tf = tf 
-		self.ntimes = ntimes 
-		self.times = np.linspace(self.t0,self.tf,self.ntimes)
-		
-		
+	########################
+	### INTERNAL METHODS ###
+	########################
+	
 	### This method will be the RHS of the EOM 
 	def _eom_rhs(self,t,X):
 		### First we reshape the dof 
@@ -302,17 +300,40 @@ class TWDynamics:
 		
 		dXdt = np.zeros_like(dof)
 		
-		
 		dXdt[0,...] = theta_dots ### Update thetas according to the velocities
 		
 		nns = [ [1,0,0],[-1,0,0],[0,1,0],[0,-1,0] ] ### Amount to roll by on each axis to form the spatial couplings  
-		dXdt[1,...] = - self.qmc.Ec*self.qmc.EJ*sum([ np.sin(thetas - np.roll(thetas,nn,[0,1,2]))  for nn in nns ]) 
+		dXdt[1,...] = self.qmc.Ec*self.qmc.EJ*sum([ np.sin(thetas - np.roll(thetas,nn,[0,1,2]))  for nn in nns ]) 
 		
 		### Finally we reflatten and send out 
-		return dXdt.ravel()
-	
+		return dXdt.ravel()	
 		
+	######################
+	### SET PARAMETERS ###
+	######################	
+		
+	### Allows to modify simulation parameters 
+	def set_simulation_times(self,t0,tf,ntimes):
+		self.t0 = t0
+		self.tf = tf 
+		self.ntimes = ntimes 
+		self.times = np.linspace(self.t0,self.tf,self.ntimes)
+		
+		
+	###################
+	### RUN METHODS ###
+	###################
+	
+	### This method will run the EOM 
+	def run_dynamics(self):
+		### First we generate the initial conditions 
+		### For the time we will sample the initial velocities to be zero 
+		
+		### We now ravel these together with the samples in to the initial conditions 
+		X0 = np.zeros((2,*self.shape))
+		X0[0,...] = self.samples ### angles are the first half of the array and are sampled by initial conditions, velocities are second half and are for now zeor 	
 
+		sol = intg.solve_ivp(self._eom_rhs,X0,(self.t0,self.tf),t_eval=self.times) 
 
 
 
