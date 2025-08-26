@@ -171,11 +171,6 @@ class QMC:
 				
 				self.thetas[x,y,t] =  np.arctan2(sy_new, sx_new) 
 				
-				
-
-		
-	
-	
 	
 	##########################
 	### SAMPLE OBSERVABLES ###
@@ -266,6 +261,14 @@ class QMC:
 			### Update the counter 
 			counter += 1
 
+	### This will start a hot start with a precomputed sample configuration 
+	def hot_start(self,sample):
+		### We assume the sample is of the same shape 
+		
+		self.thetas = sample 
+		
+
+
 
 ### This class operates on the output of the QMC sampler and implements the real time dynamics 
 class TWDynamics:
@@ -285,7 +288,7 @@ class TWDynamics:
 		
 		### The real time trajectories are only LxL
 		self.sim_shape = (self.ntimes,*self.shape) ### Simulation shapes have an extra axis which is first by output from the ODE_solve method 
-		
+	
 	########################
 	### INTERNAL METHODS ###
 	########################
