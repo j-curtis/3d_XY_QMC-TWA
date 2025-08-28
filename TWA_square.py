@@ -7,6 +7,7 @@ from scipy import integrate as intg
 from matplotlib import pyplot as plt 
 import time 
 import pickle 
+import QMC_square as qmc
 
 
 
@@ -47,7 +48,7 @@ class TWDynamics:
 		dXdt[0,...] = theta_dots ### Update thetas according to the velocities
 		
 		nns = [ [1,0,0],[-1,0,0],[0,1,0],[0,-1,0] ] ### Amount to roll by on each axis to form the spatial couplings  
-		dXdt[1,...] = self.qmc.EC*self.qmc.EJ*sum([ np.sin(thetas - np.roll(thetas,nn,[0,1,2]))  for nn in nns ]) 
+		dXdt[1,...] = -self.qmc.EC*self.qmc.EJ*sum([ np.sin(thetas - np.roll(thetas,nn,[0,1,2]))  for nn in nns ]) 
 		
 		### Finally we reflatten and send out 
 		return dXdt.ravel()	
@@ -95,7 +96,7 @@ class TWDynamics:
 ### Compatibility with demler_tools
 def run_TWA_sims(save_filename,Ej,Ec,T,L,M,nburn,nsample,nstep,tf,ntimes,over_relax=False):
 
-	sim = QMC(Ej,Ec,T,L,M)
+	sim = qmc.QMC(Ej,Ec,T,L,M)
 	sim.over_relax = over_relax
 	sim.set_sampling(nburn,nsample,nstep)
 	
@@ -108,7 +109,7 @@ def run_TWA_sims(save_filename,Ej,Ec,T,L,M,nburn,nsample,nstep,tf,ntimes,over_re
 	### Now we generate TW dynamical trajectories
 
 	with open(save_filename, 'wb') as out_file:
-        	pickle.dump((twa.trajectories), out_file)
+        	pickle.dump((twa.dof_t), out_file)
 
 
 

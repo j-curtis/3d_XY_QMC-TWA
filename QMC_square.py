@@ -11,6 +11,14 @@ import pickle
 
 ### We will create a class to handle the QMC sampling 
 class QMC:
+	
+	### This will be a useful helper method that can calculate the temperatures given a fixed trotter step size and number of steps 
+	@classmethod
+	def calc_temperature(cls,dt,M):
+		betas = dt*M ### M may be an array of sizes
+		
+		return 1./betas 
+
 	### Initialize method
 	def __init__(self,EJ,EC,T,L,M):
 		### this will initialize a class with the parameters for the model as well as simulation specs
@@ -276,8 +284,8 @@ class QMC:
 		
 
 ### Compatibility with demler_tools
-def run_MC_sims(save_filename,Ej,Ec,T,L,M,nburn,nsample,nstep,over_relax=False,hot_start_filename=None):
-
+def run_MC_sims(save_filename,Ej,Ec,L,M,dt,nburn,nsample,nstep,over_relax=False,hot_start_filename=None):
+	T = QMC.calc_temperature(dt,M)
 	sim = QMC(Ej,Ec,T,L,M)
 	sim.over_relax = over_relax
 	sim.set_sampling(nburn,nsample,nstep)
