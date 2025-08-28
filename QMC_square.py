@@ -52,6 +52,9 @@ class QMC:
 		
 		### This flag will be turned on if we want to use an over relaxation procedure 
 		self.over_relaxation = False
+		
+		### If this is set true we will print more detailed information about processes 
+		self.verbose = False 
 
 	### Modifies the thetas in place one site at a time
 	### Works by randomly selecting a site and performign a metropolis-hastings update
@@ -241,7 +244,9 @@ class QMC:
 
 	### This method implements the burn loop using the single MCStep method for nburn iterations 
 	def burn(self):
+		if self.verbose: print("Begin burn loop.")
 		for i in range(self.nburn):
+			
 			self.MCSweep()
 
 	### We now generate samples and sample the free energy density 
@@ -262,91 +267,26 @@ class QMC:
 			counter += 1
 
 	### This will start a hot start with a precomputed sample configuration 
-	def hot_start(self,sample):
-		### We assume the sample is of the same shape 
-		
-		self.thetas = sample 
-		
-
-
-
-### This class operates on the output of the QMC sampler and implements the real time dynamics 
-class TWDynamics:
-	"""Accepts a QMC sample class and implements the real time dynamics according to truncated Wigner approximation"""
-	def __init__(self,samples,t0,tf,ntimes):
-		self.samples = samples ### Samples is an array of the shape (L,L,nsample) and is a set of samples of instantenous LxL snapshots of thetas 
-		self.shape = self.samples.shape
-		
-		self.nsamples = self.shape[-1]
-		self.L = self.shape[0]
-		
-		### Simulation time parameters 
-		self.t0 = t0 
-		self.tf = tf 
-		self.ntimes = ntimes 
-		self.times = np.linspace(self.t0,self.tf,self.ntimes) 
-		
-		### The real time trajectories are only LxL
-		self.sim_shape = (self.ntimes,*self.shape) ### Simulation shapes have an extra axis which is first by output from the ODE_solve method 
-	
-	########################
-	### INTERNAL METHODS ###
-	########################
-	
-	### This method will be the RHS of the EOM 
-	def _eom_rhs(self,t,X):
-		### First we reshape the dof 
-		### We encode the coordinates in the first half of the array and the velocities in the second half 
-		dof = X.reshape((2,*self.shape) )
-		thetas = dof[0,...]
-		theta_dots = dof[1,...]
-		
-		dXdt = np.zeros_like(dof)
-		
-		dXdt[0,...] = theta_dots ### Update thetas according to the velocities
-		
-		nns = [ [1,0,0],[-1,0,0],[0,1,0],[0,-1,0] ] ### Amount to roll by on each axis to form the spatial couplings  
-		dXdt[1,...] = self.qmc.Ec*self.qmc.EJ*sum([ np.sin(thetas - np.roll(thetas,nn,[0,1,2]))  for nn in nns ]) 
-		
-		### Finally we reflatten and send out 
-		return dXdt.ravel()	
-		
-	######################
-	### SET PARAMETERS ###
-	######################	
-		
-	### Allows to modify simulation parameters 
-	def set_simulation_times(self,t0,tf,ntimes):
-		self.t0 = t0
-		self.tf = tf 
-		self.ntimes = ntimes 
-		self.times = np.linspace(self.t0,self.tf,self.ntimes)
+	def hot_start(self,sample_filename):
+		### We pass a filename where the data is stored 
+		with open(sample_filename,'r') as f:
+			sample = pickle.load(f) 
+			self.thetas = sample
 		
 		
-	###################
-	### RUN METHODS ###
-	###################
-	
-	### This method will run the EOM 
-	def run_dynamics(self):
-		### First we generate the initial conditions 
-		### For the time we will sample the initial velocities to be zero 
-		
-		### We now ravel these together with the samples in to the initial conditions 
-		X0 = np.zeros((2,*self.shape))
-		X0[0,...] = self.samples ### angles are the first half of the array and are sampled by initial conditions, velocities are second half and are for now zeor 	
-
-		sol = intg.solve_ivp(self._eom_rhs,X0,(self.t0,self.tf),t_eval=self.times) 
-
-
-
 
 ### Compatibility with demler_tools
-def run_sims(save_filename,Ej,Ec,T,L,M,nburn,nsample,nstep,over_relax=False):
+def run_MC_sims(save_filename,Ej,Ec,T,L,M,nburn,nsample,nstep,over_relax=False,hot_start_filename=None):
+
 	sim = QMC(Ej,Ec,T,L,M)
 	sim.over_relax = over_relax
 	sim.set_sampling(nburn,nsample,nstep)
 
+
+	### Now we handle the case of a hot start 
+	if hot_start_filename is not None:
+		sim.hot_start(hot_start_filename)
+		
 	sim.burn()
 	sim.sample()
 
@@ -361,93 +301,6 @@ def run_sims(save_filename,Ej,Ec,T,L,M,nburn,nsample,nstep,over_relax=False):
         ### OP samples 
 	with open(save_filename+"_OP_samples",'wb') as out_file:
 		pickle.dump(sim.OP_samples,out_file)
-	
-
-
-
-
-
-
-
-
-def main():
-
-	dataDir = "../data/07112025_2/"
-
-
-	EJ = 1.
-	EC = 0.05
-	nTs = 10
-	Ts = np.linspace(0.5,3.,nTs)
-	L = 30
-	M = 1
-
-	nburn = 10000
-	nsample = 100
-	nstep = 500
-	
-	over_relax = True 
-
-	actions = np.zeros((nTs,nsample))
-	OPs = np.zeros((nTs,nsample),dtype=complex)
-	angles = np.zeros((nTs,L,L,M,nsample))
-	vorts = np.zeros((nTs,L,L,M,nsample))
-	
-	t0 = time.time()
-	
-	for i in range(nTs):
-	
-		tloop1 = time.time()
-		sim = QMC(EJ,EC,Ts[i],L,M)
-		sim.set_sampling(nburn,nsample,nstep)
-		sim.over_relaxation = over_relax
-
-		sim.burn()
-		sim.sample()
-
-		actions[i,:] = sim.action_samples
-		OPs[i,:] = sim.OP_samples
-		angles[i,...] = sim.theta_samples
-		vorts[i,...] = sim.vort_samples 
-		
-		tloop2 = time.time()
-		print(str(i+1)+"/"+str(nTs)+": ",tloop2 - tloop1,"s")
-
-	t1 = time.time()
-	
-	np.save(dataDir+"actions.npy",actions)
-	np.save(dataDir+"OPs.npy",OPs)
-	np.save(dataDir+"angles.npy",angles)
-	np.save(dataDir+"vorts.npy",vorts)
-	np.save(dataDir+"Ts.npy",Ts)
-	
-	
-	try:
-		with open(dataDir+"meta.txt",'w') as file:
-			file.write("EJ: {ej}\n".format(ej=EJ))
-			file.write("EC: {ec}\n".format(ec=EC))
-			file.write("L: {l}\n".format(l=L))
-			file.write("M: {m}\n".format(m=M))
-			file.write("nburn: {nb}\n".format(nb=nburn))
-			file.write("nsample: {ns}\n".format(ns=nsample))
-			file.write("nstep: {ns}\n".format(ns=nstep))
-			file.write("over relax: {ov}".format(ov = over_relax))
-			file.write("total time: {t}s\n".format(t = t1-t0))
-
-
-	except Exception as e:
-		print(f"An error occurred: {e}")
-
-
-if __name__ == "__main__":
-	main()
-
-
-
-
-
-
-
 
 
 
