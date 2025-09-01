@@ -4,8 +4,6 @@
 
 import numpy as np
 from scipy import integrate as intg
-from matplotlib import pyplot as plt 
-import time 
 import pickle 
 
 
@@ -57,12 +55,21 @@ class QMC:
 		### we use an initial condition which is uniform
 		self.thetas = np.zeros(self.shape)
 		
-		
 		### This flag will be turned on if we want to use an over relaxation procedure 
 		self.over_relaxation = False
 		
 		### If this is set true we will print more detailed information about processes 
 		self.verbose = False 
+		
+		### This precomputes the list of sites to loop over
+		xsites = np.arange(self.L)[:,None,None]
+		ysites = np.arange(self.L)[None,:,None]
+		tsites = np.arange(self.M)[None,None,:]
+
+		xsites_grid,ysites_grid,tsites_grid = np.meshgrid(xsites,ysites,tsites,indexing='ij')
+
+		self.sites = np.stack([xsites_grid.ravel(),ysites_grid.ravel(),tsites_grid.ravel()],axis=-1)
+		self.shuffle_sites = False
 
 	### Modifies the thetas in place one site at a time
 	### Works by randomly selecting a site and performign a metropolis-hastings update
@@ -109,17 +116,12 @@ class QMC:
 
 	### This method performs an entire sweep over the lattice of MCStep_site method 
 	def MCSweep(self):
-		### From ChatGPT
-		xsites = np.arange(self.L)[:,None,None]
-		ysites = np.arange(self.L)[None,:,None]
-		tsites = np.arange(self.M)[None,None,:]
-
-		xsites_grid,ysites_grid,tsites_grid = np.meshgrid(xsites,ysites,tsites,indexing='ij')
-
-		sites = np.stack([xsites_grid.ravel(),ysites_grid.ravel(),tsites_grid.ravel()],axis=-1)
-
-		for i in range(sites.shape[0]):
-			self.MCStep_site(sites[i,:])
+		indices = np.arange(self.sites.shape[0])
+		
+		if self.shuffle_sites: indices = self.rng.permutation(indices)
+		 
+		for i in indices:
+			self.MCStep_site(self.sites[i,:])
 			
 		if self.over_relaxation:
 			self.over_relaxation_sweep()
@@ -149,16 +151,12 @@ class QMC:
 	### This implements an over-relaxation sweep 
 	def over_relaxation_sweep(self):
 	
-		xsites = np.arange(self.L)[:,None,None]
-		ysites = np.arange(self.L)[None,:,None]
-		tsites = np.arange(self.M)[None,None,:]
-
-		xsites_grid,ysites_grid,tsites_grid = np.meshgrid(xsites,ysites,tsites,indexing='ij')
-
-		sites = np.stack([xsites_grid.ravel(),ysites_grid.ravel(),tsites_grid.ravel()],axis=-1)
-
-		for i in range(sites.shape[0]):
-			site = sites[i,:]
+		indices = np.arange(self.sites.shape[0])
+		
+		if self.shuffle_sites: indices = self.rng.permutation(indices)
+		 
+		for i in indices:
+			site = self.sites[i,:]
 			x,y,t = site[:]
 			local_field = self.get_local_field(site)
 			
@@ -214,8 +212,6 @@ class QMC:
 	def get_vorticity(cls,thetas):
 		### This generates a list of nn indices to roll arrays by
 		### Note we index the rolls absolutely with respect to the origin of the first array
-		### We want A_v = [ sin(theta_{r+x} - theta_r) + sin(theta_{r+x+y} - theta_{r+x} ) + sin(theta_{r+y}-theta_{r+x+y}) + sin(theta_r - theta_{r+y}) ]/4 
-		#nn_indices = [(-1,0,0),(-1,1,0),(0,-1,0),(0,0,0)]
 		nn_indices = [(-1,0,0),(-1,-1,0),(0,-1,0),(0,0,0)]
 
 		vorticity = np.zeros_like(thetas)
@@ -277,7 +273,7 @@ class QMC:
 	### This will start a hot start with a precomputed sample configuration 
 	def hot_start(self,sample_filename):
 		### We pass a filename where the data is stored 
-		with open(sample_filename,'r') as f:
+		with open(sample_filename,'rb') as f:
 			sample = pickle.load(f) 
 			self.thetas = sample
 		
