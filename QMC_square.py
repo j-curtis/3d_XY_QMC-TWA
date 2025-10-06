@@ -151,9 +151,9 @@ class QMC:
 	
 		theta_out = None
 	
-		psi =  -self.Kx*( np.exp(-1.j*self.thetas[x-1,y,t]) + np.exp(-1.j*self.thetas[(x+1)%self.L,y,t]) )
-		psi += -self.Ky*( np.exp(-1.j*self.thetas[x,y-1,t]) + np.exp(-1.j*self.thetas[x,(y+1)%self.L,t]) )
-		psi += -self.Kt*( np.exp(-1.j*self.thetas[x,y,t-1]) + np.exp(-1.j*self.thetas[x,y,(t+1)%self.M]) )
+		psi =  self.Kx*( np.exp(-1.j*self.thetas[x-1,y,t]) + np.exp(-1.j*self.thetas[(x+1)%self.L,y,t]) )
+		psi += self.Ky*( np.exp(-1.j*self.thetas[x,y-1,t]) + np.exp(-1.j*self.thetas[x,(y+1)%self.L,t]) )
+		psi += self.Kt*( np.exp(-1.j*self.thetas[x,y,t-1]) + np.exp(-1.j*self.thetas[x,y,(t+1)%self.M]) )
 		
 		kappa = float(np.abs(psi))
 		
