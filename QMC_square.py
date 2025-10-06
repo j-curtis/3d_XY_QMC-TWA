@@ -58,6 +58,9 @@ class QMC:
 		### This flag will be turned on if we want to use an over relaxation procedure 
 		self.over_relaxation = False
 		
+		### This flag will be turned on if we want to draw from the local field distribution rather than the propose/reject form 
+		self.local_field_draw = False
+		
 		### If this is set true we will print more detailed information about processes 
 		self.verbose = False 
 		
@@ -103,16 +106,19 @@ class QMC:
 	def MCStep_site(self,site):
 		x , y ,t = site[:]
 
-		### Now we propose an update to the angle 
-		delta_theta = np.pi
-		new_theta = (self.thetas[x,y,t] - delta_theta + 2.*delta_theta*self.rng.random() )%(2.*np.pi)
-		
-		delta_E = self.local_action(new_theta,site) - self.local_action(self.thetas[x,y,t],site)
+		if self.local_field_draw:
+			self.thetas[x,y,t] = self.draw_from_local_field(site)
+		else:
+			### Now we propose an update to the angle 
+			delta_theta = np.pi
+			new_theta = (self.thetas[x,y,t] - delta_theta + 2.*delta_theta*self.rng.random() )%(2.*np.pi)
+			
+			delta_E = self.local_action(new_theta,site) - self.local_action(self.thetas[x,y,t],site)
 
-		p = self.rng.random()
+			p = self.rng.random()
 
-		if p < np.exp(-delta_E):
-			self.thetas[x,y,t] = new_theta
+			if p < np.exp(-delta_E):
+				self.thetas[x,y,t] = new_theta
 
 	### This method performs an entire sweep over the lattice of MCStep_site method 
 	def MCSweep(self):
@@ -137,6 +143,30 @@ class QMC:
 		tterms = -self.Kt*( np.cos(theta_val - self.thetas[x,y,t-1]) + np.cos(theta_val - self.thetas[x,y,(t+1)%self.M]) )
 
 		return xterms+yterms+tterms
+		
+	### This computes the local self-consistent field for use with the heat-bath Gibbs method and draws a new angle according to this 
+	### Return new theta 
+	def draw_from_local_field(self,site):
+		x,y,t = site[:] 
+	
+		theta_out = None
+	
+		psi =  -self.Kx*( np.exp(-1.j*self.thetas[x-1,y,t]) + np.exp(-1.j*self.thetas[(x+1)%self.L,y,t]) )
+		psi += -self.Ky*( np.exp(-1.j*self.thetas[x,y-1,t]) + np.exp(-1.j*self.thetas[x,(y+1)%self.L,t]) )
+		psi += -self.Kt*( np.exp(-1.j*self.thetas[x,y,t-1]) + np.exp(-1.j*self.thetas[x,y,(t+1)%self.M]) )
+		
+		kappa = float(np.abs(psi))
+		
+		if kappa < 1e-14: ### Safeguard for perfect cancellation 
+            		theta_out = self.rng.uniform(-np.pi, np.pi)
+        	else:
+            		mu = float(np.angle(psi))
+            		# numpy's vonmises returns in [-pi, pi]; perfect for us
+            		theta_new = self.rng.vonmises(mu=mu, kappa=kappa)
+            		
+            		
+            	return theta_new
+		
 
 	### This method computes the local self-consistent field on a given site 
 	def get_local_field(self,site):
