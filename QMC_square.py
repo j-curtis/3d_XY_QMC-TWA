@@ -61,6 +61,8 @@ class QMC:
 		### This flag will be turned on if we want to draw from the local field distribution rather than the propose/reject form 
 		self.local_field_draw = False
 		
+
+		
 		### If this is set true we will print more detailed information about processes 
 		self.verbose = False 
 		
@@ -72,6 +74,8 @@ class QMC:
 		xsites_grid,ysites_grid,tsites_grid = np.meshgrid(xsites,ysites,tsites,indexing='ij')
 
 		self.sites = np.stack([xsites_grid.ravel(),ysites_grid.ravel(),tsites_grid.ravel()],axis=-1)
+		
+		### This flag will randomize the site order that the sweep is performed in 
 		self.shuffle_sites = False
 
 	### Modifies the thetas in place one site at a time
@@ -158,14 +162,13 @@ class QMC:
 		kappa = float(np.abs(psi))
 		
 		if kappa < 1e-14: ### Safeguard for perfect cancellation 
-            		theta_out = self.rng.uniform(-np.pi, np.pi)
-        	else:
-            		mu = float(np.angle(psi))
-            		# numpy's vonmises returns in [-pi, pi]; perfect for us
-            		theta_new = self.rng.vonmises(mu=mu, kappa=kappa)
-            		
-            		
-            	return theta_new
+			theta_out = self.rng.uniform(-np.pi, np.pi)
+		else:
+			mu = float(np.angle(psi))
+			# numpy's vonmises returns in [-pi, pi]; perfect for us
+			theta_new = self.rng.vonmises(mu=mu, kappa=kappa)
+			
+		return theta_new
 		
 
 	### This method computes the local self-consistent field on a given site 
@@ -310,10 +313,13 @@ class QMC:
 		
 
 ### Compatibility with demler_tools
-def run_MC_sims(save_filename,Ej,Ec,L,M,dt,nburn,nsample,nstep,over_relax=False,hot_start_filename=None):
+def run_MC_sims(save_filename,Ej,Ec,L,M,dt,nburn,nsample,nstep,hot_start_filename=None):
+	M = int(M)
 	T = QMC.calc_temperature(dt,M)
 	sim = QMC(Ej,Ec,T,L,M)
-	sim.over_relax = over_relax
+	sim.over_relax = True
+	sim.local_field_draw = True 
+	sim.shuffle_sites = True 
 	sim.set_sampling(nburn,nsample,nstep)
 
 
