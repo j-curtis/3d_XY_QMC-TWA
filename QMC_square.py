@@ -318,7 +318,7 @@ def run_MC_sims(save_filename,Ej,Ec,L,M,dt,nburn,nsample,nstep,hot_start_filenam
 	T = QMC.calc_temperature(dt,M)
 	sim = QMC(Ej,Ec,T,L,M)
 	sim.over_relax = True
-	sim.local_field_draw = True 
+	sim.local_field_draw = False #True 
 	sim.shuffle_sites = True 
 	sim.set_sampling(nburn,nsample,nstep)
 
